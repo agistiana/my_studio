@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio Kreatif | Digital Archive</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK v9 Compat (Paling Stabil untuk HTML Langsung) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=Playfair+Display:ital,wght@1,700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #fafafa; color: #0f172a; }
+        .font-serif { font-family: 'Playfair Display', serif; }
+        .glass-nav { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); border-bottom: 1px solid #f1f5f9; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-card { animation: fadeUp 0.6s ease-out forwards; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- KONFIGURASI FIREBASE ANDA ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyB7gtOe7Z7FLnbuYikJ9c4lonxGQkjC8xA",
+            authDomain: "my-studio-20bd5.firebaseapp.com",
+            projectId: "my-studio-20bd5",
+            storageBucket: "my-studio-20bd5.firebasestorage.app",
+            messagingSenderId: "82396430384",
+            appId: "1:82396430384:web:e32d0000feff7866ededf5"
+        };
+
+        // Inisialisasi
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        function App() {
+            const [items, setItems] = useState([]);
+            const [isAuth, setIsAuth] = useState(false);
+            const [showLogin, setShowLogin] = useState(false);
+            const [showModal, setShowModal] = useState(false);
+            const [passInput, setPassInput] = useState('');
+            const [activeTab, setActiveTab] = useState('Semua');
+            const [loading, setLoading] = useState(true);
+            const [isSaving, setIsSaving] = useState(false);
+            
+            // State Form
+            const [formData, setFormData] = useState({ 
+                title: '', 
+                category: 'Website', 
+                fileData: '', 
+                description: '', 
+                link: '', 
+                type: 'image' 
+            });
+            
+            const timerRef = useRef(null);
+
+            useEffect(() => {
+                // Login Anonim (Pastikan sudah ENABLE di Firebase Auth)
+                auth.signInAnonymously().catch(e => console.error("Auth Error:", e));
+
+                // Ambil data langsung dari koleksi 'portfolio'
+                const unsubscribe = db.collection('portfolio')
+                    .orderBy('createdAt', 'desc')
+                    .onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setItems(data);
+                        setLoading(false);
+                    }, err => {
+                        console.error("Firestore Error:", err);
+                        setLoading(false);
+                    });
+
+                return () => unsubscribe();
+            }, []);
+
+            const handleLongPress = () => {
+                timerRef.current = setTimeout(() => setShowLogin(true), 3000);
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.size > 1000000) return alert("File terlalu besar! Maksimal 1MB.");
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    setFormData({ 
+                        ...formData, 
+                        fileData: ev.target.result, 
+                        type: file.type.startsWith('video/') ? 'video' : 'image' 
+                    });
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleSave = async (e) => {
+                e.preventDefault();
+                setIsSaving(true);
+                try {
+                    // Simpan ke koleksi utama 'portfolio'
+                    await db.collection('portfolio').add({
+                        ...formData,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        dateStr: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                    });
+                    setShowModal(false);
+                    setFormData({ title: '', category: 'Website', fileData: '', description: '', link: '', type: 'image' });
+                    alert("Berhasil disimpan ke Cloud!");
+                } catch (err) {
+                    alert("Gagal: " + err.message);
+                }
+                setIsSaving(false);
+            };
+
+            const handleDelete = async (id) => {
+                if(confirm("Hapus karya ini dari cloud?")) {
+                    await db.collection('portfolio').doc(id).delete();
+                }
+            };
+
+            const filtered = activeTab === 'Semua' ? items : items.filter(i => i.category === activeTab);
+
+            return (
+                <div className="min-h-screen pb-20">
+                    {/* Header Nav */}
+                    <nav className="fixed top-0 w-full z-50 glass-nav px-6 h-20 flex justify-between items-center">
+                        <div 
+                            onMouseDown={handleLongPress} onTouchStart={handleLongPress} 
+                            onMouseUp={() => clearTimeout(timerRef.current)} onTouchEnd={() => clearTimeout(timerRef.current)} 
+                            className="text-2xl font-black tracking-tighter cursor-pointer select-none"
+                        >
+                            STUDIO<span className="text-indigo-600">.</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {isAuth && <span className="text-[10px] font-black bg-indigo-600 text-white px-3 py-1 rounded-full animate-pulse">ADMIN MODE</span>}
+                            <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-bold">S</div>
+                        </div>
+                    </nav>
+
+                    {/* Hero */}
+                    <header className="pt-40 pb-12 px-6 max-w-6xl mx-auto">
+                        <h1 className="text-7xl md:text-9xl font-black tracking-tighter leading-none mb-6">
+                            Digital <br /><span className="font-serif italic text-slate-300">Archive.</span>
+                        </h1>
+                        <p className="text-slate-400 font-medium text-xl">Koleksi karya digital dan eksplorasi visual studio.</p>
+                    </header>
+
+                    {/* Filter */}
+                    <div className="sticky top-20 z-40 bg-white/80 backdrop-blur-md py-4 px-6 overflow-x-auto no-scrollbar border-b border-slate-50">
+                        <div className="flex gap-2 max-w-6xl mx-auto">
+                            {['Semua', 'Website', 'Foto', 'Video', 'Desain'].map(cat => (
+                                <button key={cat} onClick={() => setActiveTab(cat)} className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === cat ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Grid Portfolio */}
+                    <main className="p-6 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 mt-8">
+                        {loading ? (
+                            <div className="col-span-full py-20 text-center text-slate-300 font-bold animate-pulse">MEMUAT DATABASE...</div>
+                        ) : filtered.length === 0 ? (
+                            <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-100 rounded-3xl text-slate-300 font-bold uppercase tracking-widest text-xs">Belum ada karya</div>
+                        ) : (
+                            filtered.map(item => (
+                                <div key={item.id} className="animate-card">
+                                    <div className="relative aspect-[4/3] rounded-[40px] overflow-hidden bg-slate-100 shadow-xl border border-white">
+                                        {item.type === 'video' ? (
+                                            <video src={item.fileData} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+                                        ) : (
+                                            <img src={item.fileData} className="w-full h-full object-cover" />
+                                        )}
+                                        {isAuth && (
+                                            <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 p-3 bg-red-500 text-white rounded-2xl font-bold text-[10px]">HAPUS</button>
+                                        )}
+                                    </div>
+                                    <div className="mt-6 px-2">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{item.category}</span>
+                                            <span className="text-[10px] font-bold text-slate-300">{item.dateStr}</span>
+                                        </div>
+                                        <h3 className="text-2xl font-black tracking-tight">{item.title}</h3>
+                                        <p className="text-slate-400 mt-2 text-sm italic">"{item.description}"</p>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </main>
+
+                    {/* Modal Admin Login */}
+                    {showLogin && (
+                        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-xl flex items-center justify-center p-6">
+                            <div className="bg-white p-10 rounded-[40px] w-full max-w-xs text-center">
+                                <h2 className="font-black mb-6 uppercase tracking-tighter">Admin Access</h2>
+                                <input type="password" placeholder="Passcode" className="w-full p-4 bg-slate-50 rounded-2xl mb-4 text-center font-bold outline-none" value={passInput} onChange={e => setPassInput(e.target.value)} />
+                                <button onClick={() => {if(passInput==='2024'){setIsAuth(true); setShowLogin(false); setPassInput('');}else alert('Salah');}} className="w-full p-4 bg-indigo-600 text-white rounded-2xl font-black">MASUK</button>
+                                <button onClick={() => setShowLogin(false)} className="mt-4 text-slate-300 text-[10px] font-bold uppercase">Batal</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal Upload */}
+                    {showModal && (
+                        <div className="fixed inset-0 z-[100] bg-white overflow-y-auto p-6">
+                            <div className="max-w-md mx-auto py-10">
+                                <div className="flex justify-between items-center mb-10">
+                                    <h2 className="text-3xl font-black italic tracking-tighter uppercase">Tambah Karya</h2>
+                                    <button onClick={() => setShowModal(false)} className="font-bold text-xl">✕</button>
+                                </div>
+                                <form onSubmit={handleSave} className="space-y-6">
+                                    <div className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center relative overflow-hidden">
+                                        {formData.fileData ? (
+                                            formData.type === 'video' ? <video src={formData.fileData} className="w-full h-full object-cover" /> : <img src={formData.fileData} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="text-slate-300 font-bold text-xs uppercase">Klik untuk upload</span>
+                                        )}
+                                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} required />
+                                    </div>
+                                    <input placeholder="Judul" className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} required />
+                                    <select className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                                        <option>Website</option><option>Foto</option><option>Video</option><option>Desain</option>
+                                    </select>
+                                    <textarea placeholder="Deskripsi singkat" className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none h-32" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
+                                    <button disabled={isSaving} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest shadow-xl">
+                                        {isSaving ? 'MENGIRIM...' : 'PUBLISH SEKARANG'}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Tombol Plus */}
+                    {isAuth && (
+                        <button onClick={() => setShowModal(true)} className="fixed bottom-8 right-8 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-2xl flex items-center justify-center text-3xl font-bold hover:scale-110 active:scale-90 transition-all">
+                            +
+                        </button>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
